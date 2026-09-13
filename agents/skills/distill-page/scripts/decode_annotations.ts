@@ -236,13 +236,34 @@ export const AnnotationParser = {
     let inlineAccumulator: ASTInlineNode[] = [];
 
     const flushInlines = () => {
-      if (inlineAccumulator.length > 0) {
+      if (!inlineAccumulator.length) {
+        return;
+      }
+
+      const singleInlineNode = inlineAccumulator.length === 1 ? inlineAccumulator[0] : undefined;
+      const size = singleInlineNode?.type === 'text' ? singleInlineNode.style?.textSize : undefined;
+
+      // Infer headings from large text only when it forms the entire inline run.
+      // Otherwise you can end up with multiple heading blocks from a single sentence.
+      if (
+        singleInlineNode?.type === 'text' &&
+        (size === TextSize.XL || size === TextSize.L) &&
+        !state.insideHeading &&
+        !state.insideParagraph &&
+        !state.insideListItem
+      ) {
+        blocks.push({
+          type: 'heading',
+          level: this.textSizeToHeadingLevel(size),
+          children: [singleInlineNode],
+        });
+      } else {
         blocks.push({
           type: 'paragraph',
           children: [...inlineAccumulator],
         });
-        inlineAccumulator = [];
       }
+      inlineAccumulator = [];
     };
 
     let activeCodeBlock: ASTCodeBlock | null = null;
@@ -388,27 +409,6 @@ export const AnnotationParser = {
     }
 
     const bold = !!(textData.textStyle?.hasEmphasis && !state.insideHeading);
-
-    const size = textData.textStyle?.textSize;
-    if (
-      (size === TextSize.XL || size === TextSize.L) &&
-      !state.insideHeading &&
-      !state.insideParagraph &&
-      !state.insideListItem
-    ) {
-      const headingTextRun: ASTTextRun = {
-        type: 'text',
-        text: trimmed,
-        style: textData.textStyle ? {...textData.textStyle, hasEmphasis: bold} : undefined,
-      };
-      const level = this.textSizeToHeadingLevel(size);
-      const headingBlock: ASTHeading = {
-        type: 'heading',
-        level,
-        children: [headingTextRun],
-      };
-      return [headingBlock];
-    }
 
     const run: ASTTextRun = {
       type: 'text',
